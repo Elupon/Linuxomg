@@ -40,6 +40,11 @@ jobs:
 
           echo "Using profile: $PROFILE"
           test -f "$PROFILE/packages.x86_64"
+          
+cp /usr/share/archiso/configs/releng/profiledef.sh "$PROFILE/profiledef.sh"
+
+echo "Using official Arch Linux profiledef.sh"
+cat "$PROFILE/profiledef.sh"
 
           echo "PROFILE=$PROFILE" >> "$GITHUB_ENV"
 
