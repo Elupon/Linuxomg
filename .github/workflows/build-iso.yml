@@ -2,6 +2,7 @@
 
 
 
+
 name: Build Dolboeb OS ISO
 
 on:
@@ -30,12 +31,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare complete Archiso profile
+      - name: Prepare Dolboeb OS
         shell: bash
         run: |
           set -euo pipefail
 
-          mkdir -p /tmp/project "$GITHUB_WORKSPACE/out" /tmp/archiso-work
+          mkdir -p /tmp/project
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          mkdir -p /tmp/archiso-work
 
           unzip -q DolboebOS-ISO-Project.zip -d /tmp/project
 
@@ -43,8 +46,7 @@ jobs:
             -type f -name profiledef.sh -print -quit)"
 
           if [[ -z "$PROFILE_DEF" ]]; then
-            echo "::error::profiledef.sh not found!"
-            find /tmp/project -maxdepth 5 -type f
+            echo "::error::profiledef.sh not found"
             exit 1
           fi
 
@@ -56,20 +58,21 @@ jobs:
           test -d "$RELENG/syslinux"
           test -d "$RELENG/efiboot"
 
-          echo "Profile: $PROFILE"
+          echo "Preparing profile: $PROFILE"
 
-          # Restore official Arch live system files
+          # Restore official live system files
           mkdir -p "$PROFILE/airootfs"
           cp -an "$RELENG/airootfs/." "$PROFILE/airootfs/"
           mkdir -p "$PROFILE/airootfs/root"
 
-          # Restore official boot files
-          mkdir -p "$PROFILE/syslinux" "$PROFILE/efiboot"
+          # Restore BIOS and UEFI boot files
+          mkdir -p "$PROFILE/syslinux"
+          mkdir -p "$PROFILE/efiboot"
 
           cp -a "$RELENG/syslinux/." "$PROFILE/syslinux/"
           cp -a "$RELENG/efiboot/." "$PROFILE/efiboot/"
 
-          # Replace obsolete Neofetch with Fastfetch
+          # Replace obsolete Neofetch
           sed -i '/^[[:space:]]*neofetch[[:space:]]*$/d' \
             "$PROFILE/packages.x86_64"
 
@@ -77,14 +80,14 @@ jobs:
             echo fastfetch >> "$PROFILE/packages.x86_64"
           fi
 
-          # Required boot packages
+          # Boot packages
           for package in syslinux edk2-shell memtest86+ memtest86+-efi; do
             if ! grep -qxF "$package" "$PROFILE/packages.x86_64"; then
               echo "$package" >> "$PROFILE/packages.x86_64"
             fi
           done
 
-          # Check every package before building
+          # Check packages before building
           while IFS= read -r package; do
             package="${package%%#*}"
             package="$(echo "$package" | xargs)"
@@ -103,7 +106,7 @@ jobs:
             exit 1
           done < "$PROFILE/packages.x86_64"
 
-          # Official Archiso profile definition
+          # Configure ISO
           cp "$RELENG/profiledef.sh" "$PROFILE/profiledef.sh"
 
           cat >> "$PROFILE/profiledef.sh" <<'EOF'
@@ -114,12 +117,22 @@ jobs:
           iso_application="Dolboeb OS - Arch Linux"
           iso_version="1.0"
           install_dir="dolboeb"
+
+          # Limbo / QEMU boot parameters
+          kernel_params_x86_64="archisolabel=DOLBOEB_OS archisobasedir=dolboeb archisodevice=/dev/sr0 loglevel=7"
           EOF
+
+          echo "Checking boot configurations..."
+
+          test -f "$PROFILE/syslinux/syslinux.cfg"
+          test -d "$PROFILE/efiboot/loader/entries"
 
           echo "Final packages:"
           cat "$PROFILE/packages.x86_64"
 
           echo "PROFILE=$PROFILE" >> "$GITHUB_ENV"
+
+          echo "Dolboeb OS is ready to build!"
 
       - name: Build ISO
         shell: bash
@@ -133,10 +146,16 @@ jobs:
             -o "$GITHUB_WORKSPACE/out" \
             "$PROFILE"
 
-          test -n "$(find "$GITHUB_WORKSPACE/out" \
+          ISO="$(find "$GITHUB_WORKSPACE/out" \
             -maxdepth 1 -type f -name '*.iso' -print -quit)"
 
-          ls -lh "$GITHUB_WORKSPACE/out/"*.iso
+          if [[ -z "$ISO" ]]; then
+            echo "::error::ISO was not generated"
+            exit 1
+          fi
+
+          echo "ISO CREATED:"
+          ls -lh "$ISO"
 
       - name: Upload ISO
         uses: actions/upload-artifact@v4
