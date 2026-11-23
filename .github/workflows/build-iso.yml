@@ -1,5 +1,6 @@
 
 
+
 name: Build Dolboeb OS ISO
 
 on:
@@ -35,6 +36,7 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/out"
           mkdir -p /tmp/archiso-work
 
+          echo "Extracting Dolboeb OS..."
           unzip -q DolboebOS-ISO-Project.zip -d /tmp/project
 
           PROFILE_DEF="$(find /tmp/project \
@@ -42,6 +44,7 @@ jobs:
 
           if [ -z "$PROFILE_DEF" ]; then
             echo "ERROR: profiledef.sh not found!"
+            find /tmp/project -maxdepth 4 -type f
             exit 1
           fi
 
@@ -52,17 +55,19 @@ jobs:
           test -d "$RELENG/syslinux"
           test -d "$RELENG/efiboot"
 
-          echo "Found profile: $PROFILE"
+          echo "Profile: $PROFILE"
+
+          echo "Creating missing root directory..."
+          mkdir -p "$PROFILE/airootfs/root"
 
           echo "Copying official boot configurations..."
-
           mkdir -p "$PROFILE/syslinux"
           cp -a "$RELENG/syslinux/." "$PROFILE/syslinux/"
 
           mkdir -p "$PROFILE/efiboot"
           cp -a "$RELENG/efiboot/." "$PROFILE/efiboot/"
 
-          echo "Adding missing boot packages..."
+          echo "Adding boot packages..."
 
           for package in syslinux edk2-shell memtest86+ memtest86+-efi; do
             if ! grep -qxF "$package" "$PROFILE/packages.x86_64"; then
@@ -70,7 +75,7 @@ jobs:
             fi
           done
 
-          echo "Creating Dolboeb OS profile..."
+          echo "Configuring ISO..."
 
           cp "$RELENG/profiledef.sh" "$PROFILE/profiledef.sh"
 
@@ -84,8 +89,10 @@ jobs:
           install_dir="dolboeb"
           EOF
 
-          echo "Checking boot files..."
+          echo "Checking required directories..."
 
+          test -d "$PROFILE/airootfs/root"
+          test -f "$PROFILE/packages.x86_64"
           test -f "$PROFILE/syslinux/syslinux.cfg"
           test -d "$PROFILE/efiboot/loader/entries"
 
@@ -98,7 +105,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Starting Dolboeb OS ISO build..."
+          echo "Starting DOLBOEB OS build..."
 
           mkarchiso -v \
             -w /tmp/archiso-work \
