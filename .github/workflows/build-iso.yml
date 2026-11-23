@@ -1,0 +1,77 @@
+
+name: Build Ublyudskaya OS ISO
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Debian 13 KDE Live ISO
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Check out project
+        uses: actions/checkout@v4
+
+      - name: Build ISO in Debian Trixie container
+        run: |
+          set -eux
+          mkdir -p "$GITHUB_WORKSPACE/out"
+
+          docker run --privileged --rm \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -w /work \
+            debian:trixie \
+            bash -euxo pipefail -c '
+              export DEBIAN_FRONTEND=noninteractive
+
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                live-build \
+                debootstrap \
+                xorriso \
+                squashfs-tools \
+                isolinux \
+                syslinux-common \
+                grub-pc-bin \
+                grub-efi-amd64-bin \
+                dosfstools \
+                mtools \
+                rsync \
+                ca-certificates
+
+              lb config \
+                --mode debian \
+                --distribution trixie \
+                --architectures amd64 \
+                --binary-image iso-hybrid \
+                --bootloaders "syslinux grub-efi" \
+                --archive-areas "main contrib non-free non-free-firmware" \
+                --debian-installer false \
+                --apt-recommends true \
+                --iso-application "Ublyudskaya OS 1.0" \
+                --iso-publisher "Elupon / Ublyudskaya OS" \
+                --iso-volume "UBLYUDOS_1" \
+                --bootappend-live "boot=live components username=ublyud hostname=ublyud-os"
+
+              lb build
+
+              mkdir -p /work/out
+              find . -maxdepth 1 -type f -name "*.iso" \
+                -exec cp -v {} /work/out/ \;
+
+              test -n "$(find /work/out -maxdepth 1 -name "*.iso" -print -quit)"
+            '
+
+      - name: Upload ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: UblyudskayaOS-ISO
+          path: out/*.iso
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
