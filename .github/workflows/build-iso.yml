@@ -1,4 +1,5 @@
 
+
 name: Build Dolboeb OS ISO
 
 on:
@@ -28,13 +29,11 @@ jobs:
       - name: Prepare profile
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           mkdir -p /tmp/project
           mkdir -p "$GITHUB_WORKSPACE/out"
           mkdir -p /tmp/archiso-work
-
-          echo "Extracting Dolboeb OS..."
 
           unzip -q DolboebOS-ISO-Project.zip -d /tmp/project
 
@@ -43,23 +42,37 @@ jobs:
 
           if [ -z "$PROFILE_DEF" ]; then
             echo "ERROR: profiledef.sh not found!"
-            find /tmp/project -maxdepth 4 -type f
             exit 1
           fi
 
           PROFILE="$(dirname "$PROFILE_DEF")"
+          RELENG="/usr/share/archiso/configs/releng"
 
-          echo "Profile found: $PROFILE"
+          test -f "$PROFILE/packages.x86_64"
+          test -d "$RELENG/syslinux"
+          test -d "$RELENG/efiboot"
 
-          if [ ! -f "$PROFILE/packages.x86_64" ]; then
-            echo "ERROR: packages.x86_64 not found!"
-            exit 1
-          fi
+          echo "Found profile: $PROFILE"
 
-          echo "Replacing broken profile definition..."
+          echo "Copying official boot configurations..."
 
-          cp /usr/share/archiso/configs/releng/profiledef.sh \
-             "$PROFILE/profiledef.sh"
+          mkdir -p "$PROFILE/syslinux"
+          cp -a "$RELENG/syslinux/." "$PROFILE/syslinux/"
+
+          mkdir -p "$PROFILE/efiboot"
+          cp -a "$RELENG/efiboot/." "$PROFILE/efiboot/"
+
+          echo "Adding missing boot packages..."
+
+          for package in syslinux edk2-shell memtest86+ memtest86+-efi; do
+            if ! grep -qxF "$package" "$PROFILE/packages.x86_64"; then
+              echo "$package" >> "$PROFILE/packages.x86_64"
+            fi
+          done
+
+          echo "Creating Dolboeb OS profile..."
+
+          cp "$RELENG/profiledef.sh" "$PROFILE/profiledef.sh"
 
           cat >> "$PROFILE/profiledef.sh" <<'EOF'
 
@@ -71,25 +84,28 @@ jobs:
           install_dir="dolboeb"
           EOF
 
-          echo "Checking profile..."
-          test -f "$PROFILE/profiledef.sh"
-          test -f "$PROFILE/packages.x86_64"
+          echo "Checking boot files..."
+
+          test -f "$PROFILE/syslinux/syslinux.cfg"
+          test -d "$PROFILE/efiboot/loader/entries"
 
           echo "PROFILE=$PROFILE" >> "$GITHUB_ENV"
+
+          echo "Profile preparation successful!"
 
       - name: Build ISO
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          echo "Building DOLBOEB OS..."
+          echo "Starting Dolboeb OS ISO build..."
 
           mkarchiso -v \
             -w /tmp/archiso-work \
             -o "$GITHUB_WORKSPACE/out" \
             "$PROFILE"
 
-          echo "ISO build completed!"
+          echo "ISO BUILD SUCCESSFUL!"
 
           ls -lh "$GITHUB_WORKSPACE/out/"
 
