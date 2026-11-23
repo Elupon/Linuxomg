@@ -1,4 +1,5 @@
 
+
 name: Build Dolboeb OS ISO
 
 on:
@@ -6,29 +7,50 @@ on:
   push:
     paths:
       - 'DolboebOS-ISO-Project.zip'
+      - 'dolboeb-profile/**'
       - '.github/workflows/build-iso.yml'
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+      options: --privileged
 
     steps:
+      - name: Install tools
+        run: |
+          pacman -Syu --noconfirm archiso git unzip findutils
+
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build ISO using Arch Linux
+      - name: Prepare profile
         run: |
-          docker run --privileged --rm \
-            -v "$GITHUB_WORKSPACE:/work" \
-            -w /work \
-            archlinux:latest bash -lc '
-              pacman -Syu --noconfirm archiso unzip
-              unzip -q DolboebOS-ISO-Project.zip -d /tmp/project
-              mkarchiso -v \
-                -w /tmp/archiso-work \
-                -o /work/out \
-                /tmp/project/DolboebOS-ISO-Project/dolboeb-profile
-            '
+          mkdir -p /tmp/project out /tmp/archiso-work
+
+          unzip -q DolboebOS-ISO-Project.zip -d /tmp/project
+
+          PROFILE="$(find /tmp/project -type f -name profiledef.sh -printf '%h\n' | head -n 1)"
+
+          if [ -z "$PROFILE" ]; then
+            echo "ERROR: profiledef.sh not found!"
+            exit 1
+          fi
+
+          echo "Using profile: $PROFILE"
+          test -f "$PROFILE/packages.x86_64"
+
+          echo "PROFILE=$PROFILE" >> "$GITHUB_ENV"
+
+      - name: Build ISO
+        run: |
+          mkarchiso -v \
+            -w /tmp/archiso-work \
+            -o "$GITHUB_WORKSPACE/out" \
+            "$PROFILE"
+
+          ls -lh out/*.iso
 
       - name: Upload ISO
         uses: actions/upload-artifact@v4
