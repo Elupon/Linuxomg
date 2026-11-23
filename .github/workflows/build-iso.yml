@@ -1,0 +1,38 @@
+
+name: Build Dolboeb OS ISO
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'DolboebOS-ISO-Project.zip'
+      - '.github/workflows/build-iso.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build ISO using Arch Linux
+        run: |
+          docker run --privileged --rm \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -w /work \
+            archlinux:latest bash -lc '
+              pacman -Syu --noconfirm archiso unzip
+              unzip -q DolboebOS-ISO-Project.zip -d /tmp/project
+              mkarchiso -v \
+                -w /tmp/archiso-work \
+                -o /work/out \
+                /tmp/project/DolboebOS-ISO-Project/dolboeb-profile
+            '
+
+      - name: Upload ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: DolboebOS-ISO
+          path: out/*.iso
+          if-no-files-found: error
