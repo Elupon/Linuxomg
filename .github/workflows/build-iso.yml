@@ -1,4 +1,5 @@
 
+
 name: Build Ublyudskaya OS ISO
 
 on:
@@ -9,28 +10,33 @@ permissions:
 
 jobs:
   build:
-    name: Build Debian 13 KDE Live ISO
+    name: Build Ublyudskaya OS 1.0
     runs-on: ubuntu-24.04
     timeout-minutes: 360
 
     steps:
-      - name: Check out project
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build ISO in Debian Trixie container
+      - name: Check project archive
         run: |
           set -eux
-          mkdir -p "$GITHUB_WORKSPACE/out"
+          test -f UblyudskayaOS-Project.zip
+
+      - name: Build Debian 13 KDE ISO
+        run: |
+          set -eux
 
           docker run --privileged --rm \
             -v "$GITHUB_WORKSPACE:/work" \
             -w /work \
             debian:trixie \
             bash -euxo pipefail -c '
+
               export DEBIAN_FRONTEND=noninteractive
 
               apt-get update
-              apt-get install -y --no-install-recommends \
+              apt-get install -y \
                 live-build \
                 debootstrap \
                 xorriso \
@@ -42,7 +48,30 @@ jobs:
                 dosfstools \
                 mtools \
                 rsync \
+                unzip \
                 ca-certificates
+
+              echo "=== EXTRACTING PROJECT ==="
+
+              mkdir -p /tmp/ublyud-project
+              unzip -q /work/UblyudskayaOS-Project.zip \
+                -d /tmp/ublyud-project
+
+              PROJECT_ROOT="$(find /tmp/ublyud-project \
+                -type f \
+                -path "*/config/package-lists/desktop.list.chroot" \
+                -print -quit | sed "s#/config/package-lists/desktop.list.chroot##")"
+
+              if [ -z "$PROJECT_ROOT" ]; then
+                echo "ERROR: Project configuration not found in ZIP"
+                exit 1
+              fi
+
+              echo "Project found: $PROJECT_ROOT"
+
+              cp -a "$PROJECT_ROOT/config" /work/config
+
+              echo "=== CONFIGURING LIVE BUILD ==="
 
               lb config \
                 --mode debian \
@@ -58,16 +87,21 @@ jobs:
                 --iso-volume "UBLYUDOS_1" \
                 --bootappend-live "boot=live components username=ublyud hostname=ublyud-os"
 
+              echo "=== BUILDING ISO ==="
+
               lb build
 
               mkdir -p /work/out
+
               find . -maxdepth 1 -type f -name "*.iso" \
                 -exec cp -v {} /work/out/ \;
 
               test -n "$(find /work/out -maxdepth 1 -name "*.iso" -print -quit)"
+
+              echo "=== BUILD COMPLETE ==="
             '
 
-      - name: Upload ISO
+      - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
         with:
           name: UblyudskayaOS-ISO
