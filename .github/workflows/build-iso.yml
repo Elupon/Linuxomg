@@ -1,5 +1,4 @@
 
-
 name: Build Dolboeb OS ISO
 
 on:
@@ -7,12 +6,12 @@ on:
   push:
     paths:
       - 'DolboebOS-ISO-Project.zip'
-      - 'dolboeb-profile/**'
       - '.github/workflows/build-iso.yml'
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     container:
       image: archlinux:latest
       options: --privileged
@@ -20,42 +19,79 @@ jobs:
     steps:
       - name: Install tools
         run: |
-          pacman -Syu --noconfirm archiso git unzip findutils
+          pacman -Syu --noconfirm --needed \
+            archiso git unzip findutils
 
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Prepare profile
+        shell: bash
         run: |
-          mkdir -p /tmp/project out /tmp/archiso-work
+          set -e
+
+          mkdir -p /tmp/project
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          mkdir -p /tmp/archiso-work
+
+          echo "Extracting Dolboeb OS..."
 
           unzip -q DolboebOS-ISO-Project.zip -d /tmp/project
 
-          PROFILE="$(find /tmp/project -type f -name profiledef.sh -printf '%h\n' | head -n 1)"
+          PROFILE_DEF="$(find /tmp/project \
+            -type f -name profiledef.sh -print -quit)"
 
-          if [ -z "$PROFILE" ]; then
+          if [ -z "$PROFILE_DEF" ]; then
             echo "ERROR: profiledef.sh not found!"
+            find /tmp/project -maxdepth 4 -type f
             exit 1
           fi
 
-          echo "Using profile: $PROFILE"
-          test -f "$PROFILE/packages.x86_64"
-          
-cp /usr/share/archiso/configs/releng/profiledef.sh "$PROFILE/profiledef.sh"
+          PROFILE="$(dirname "$PROFILE_DEF")"
 
-echo "Using official Arch Linux profiledef.sh"
-cat "$PROFILE/profiledef.sh"
+          echo "Profile found: $PROFILE"
+
+          if [ ! -f "$PROFILE/packages.x86_64" ]; then
+            echo "ERROR: packages.x86_64 not found!"
+            exit 1
+          fi
+
+          echo "Replacing broken profile definition..."
+
+          cp /usr/share/archiso/configs/releng/profiledef.sh \
+             "$PROFILE/profiledef.sh"
+
+          cat >> "$PROFILE/profiledef.sh" <<'EOF'
+
+          iso_name="dolboeb-os"
+          iso_label="DOLBOEB_OS"
+          iso_publisher="Dolboeb OS"
+          iso_application="Dolboeb OS - Arch Linux"
+          iso_version="1.0"
+          install_dir="dolboeb"
+          EOF
+
+          echo "Checking profile..."
+          test -f "$PROFILE/profiledef.sh"
+          test -f "$PROFILE/packages.x86_64"
 
           echo "PROFILE=$PROFILE" >> "$GITHUB_ENV"
 
       - name: Build ISO
+        shell: bash
         run: |
+          set -e
+
+          echo "Building DOLBOEB OS..."
+
           mkarchiso -v \
             -w /tmp/archiso-work \
             -o "$GITHUB_WORKSPACE/out" \
             "$PROFILE"
 
-          ls -lh out/*.iso
+          echo "ISO build completed!"
+
+          ls -lh "$GITHUB_WORKSPACE/out/"
 
       - name: Upload ISO
         uses: actions/upload-artifact@v4
@@ -63,3 +99,4 @@ cat "$PROFILE/profiledef.sh"
           name: DolboebOS-ISO
           path: out/*.iso
           if-no-files-found: error
+          retention-days: 14
