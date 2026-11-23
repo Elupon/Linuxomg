@@ -1,6 +1,6 @@
 
 
-name: Build Ublyudskaya OS ISO
+name: Build Ubludskaya OS ISO
 
 on:
   workflow_dispatch:
